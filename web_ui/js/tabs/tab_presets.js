@@ -2,12 +2,15 @@
  * 预设管理模块 (tab_presets.js)
  * ==============================
  * 负责 page-presets 的所有 UI 交互和状态同步
- * 通过 EventBus 订阅/发布事件，不直接操作 pyBridge
+ *
+ * 【Electron 迁移说明】
+ * - 旧版：API.call('get_presets', {}) → bridge → signal_result → EventBus
+ * - 新版：API.getPresets() → fetch GET /api/presets → 直接更新
+ * - 预设 CRUD 全部改为直接调用 API 方法（async/await）
  */
 
 /**
  * 渲染预设列表到 DOM
- * @param {Array} presets - 预设数据数组
  */
 function renderPresets(presets) {
     const list = document.getElementById('presetsList');
@@ -39,7 +42,20 @@ function renderPresets(presets) {
 }
 
 /**
- * 初始化预设管理模块
+ * 加载预设列表
+ */
+async function loadPresets() {
+    try {
+        const presets = await window.API.getPresets();
+        AppState.setPresets(presets);
+        renderPresets(presets);
+    } catch (e) {
+        console.error('[TabPresets] 加载预设失败:', e);
+    }
+}
+
+/**
+ * 初始化预设管理模块（由 app.js 的 onBridgeReady 触发）
  */
 function initPresets() {
     // 绑定新建预设按钮
@@ -54,111 +70,103 @@ function initPresets() {
         list.addEventListener('click', (e) => {
             const applyBtn = e.target.closest('.apply-preset-btn');
             if (applyBtn) {
-                const id = applyBtn.dataset.id;
-                applyPreset(id);
+                applyPreset(applyBtn.dataset.id);
                 return;
             }
-
             const deleteBtn = e.target.closest('.delete-preset-btn');
             if (deleteBtn) {
-                const id = deleteBtn.dataset.id;
-                deletePreset(id);
+                deletePreset(deleteBtn.dataset.id);
                 return;
             }
         });
     }
 
     // 订阅 EventBus 事件
-    EventBus.on('presets:loaded', (result) => {
-        console.log('[TabPresets] 收到 presets:loaded', result);
-        if (result.success && result.presets) {
-            AppState.setPresets(result.presets);
-            renderPresets(result.presets);
-        }
-    });
-
-    EventBus.on('preset:created', (result) => {
+    EventBus.on('preset:created', async (result) => {
         console.log('[TabPresets] 收到 preset:created', result);
         if (result.success) {
             window.showToast('预设创建成功');
-            loadPresets();
+            await loadPresets();
         } else {
-            window.showToast('预设创建失败');
+            window.showToast('预设创建失败: ' + (result.error || ''));
         }
     });
 
     EventBus.on('preset:applied', (result) => {
         console.log('[TabPresets] 收到 preset:applied', result);
         if (result.success && result.preset) {
-            window.showToast(`已应用预设: ${result.preset.name}`);
+            window.showToast('已应用预设: ' + result.preset.name);
             const editor = document.getElementById('dreaminaPrompt');
             if (result.preset.textContent && editor) {
                 editor.textContent = result.preset.textContent;
-                if (typeof state !== 'undefined') {
-                    state.prompt = result.preset.textContent;
+                if (window.TabTasks && window.TabTasks._state) {
+                    window.TabTasks._state.prompt = result.preset.textContent;
                 }
             }
+        } else {
+            window.showToast('应用预设失败');
         }
     });
 
-    EventBus.on('preset:deleted', (result) => {
+    EventBus.on('preset:deleted', async (result) => {
         console.log('[TabPresets] 收到 preset:deleted', result);
         if (result.success) {
             window.showToast('预设已删除');
-            loadPresets();
+            await loadPresets();
+        } else {
+            window.showToast('删除预设失败');
         }
     });
 
-    // 首次初始化时加载预设列表
-    loadPresets();
+    EventBus.on('presets:updated', async () => {
+        await loadPresets();
+    });
 
     console.log('[tab_presets.js] 模块初始化完成');
 }
 
 /**
- * 加载预设列表
- */
-function loadPresets() {
-    API.call('get_presets', {});
-}
-
-/**
  * 创建新预设
  */
-function createPreset() {
+async function createPreset() {
     const name = prompt('请输入预设名称：');
     if (name && name.trim()) {
         const config = {
             name: name.trim(),
-            prompt: typeof state !== 'undefined' ? state.prompt : '',
+            prompt: (window.TabTasks && window.TabTasks._state) ? window.TabTasks._state.prompt : '',
             settings: {
-                type: typeof state !== 'undefined' ? state.type : 'AI Video',
-                model: typeof state !== 'undefined' ? state.model : 'Dreamina Seedance 2.0 Fast',
-                mode: typeof state !== 'undefined' ? state.mode : 'first-last',
-                aspect: typeof state !== 'undefined' ? state.aspect : '16:9',
-                duration: typeof state !== 'undefined' ? state.duration : '10s',
-                intensity: typeof state !== 'undefined' ? state.intensity : 70
+                type: (window.TabTasks && window.TabTasks._state) ? window.TabTasks._state.type : 'AI Video',
+                model: (window.TabTasks && window.TabTasks._state) ? window.TabTasks._state.model : 'Dreamina Seedance 2.0 Fast',
+                mode: (window.TabTasks && window.TabTasks._state) ? window.TabTasks._state.mode : 'first-last',
+                aspect: (window.TabTasks && window.TabTasks._state) ? window.TabTasks._state.aspect : '16:9',
+                duration: (window.TabTasks && window.TabTasks._state) ? window.TabTasks._state.duration : '10s',
+                intensity: (window.TabTasks && window.TabTasks._state) ? window.TabTasks._state.intensity : 70
             }
         };
-
-        API.call('create_preset', config);
+        await window.API.createPreset(config);
     }
 }
 
 /**
  * 应用预设
  */
-function applyPreset(id) {
-    API.call('apply_preset', { id });
+async function applyPreset(id) {
+    await window.API.applyPreset(id);
 }
 
 /**
  * 删除预设
  */
-function deletePreset(id) {
+async function deletePreset(id) {
     if (confirm('确定要删除此预设吗？')) {
-        API.call('delete_preset', { id });
+        await window.API.deletePreset(id);
     }
 }
 
-export { initPresets, renderPresets };
+// 挂载到 window（供外部调用）
+window.initPresets = initPresets;
+window.renderPresets = renderPresets;
+
+// 自动初始化（在 Bridge 就绪后触发，由 app.js 调用）
+// 不在这里立即调用，因为此时 EventBus/httpClient 可能还未就绪
+// 由 app.js 的 onBridgeReady 统一调用

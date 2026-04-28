@@ -4,20 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <!-- CSP: 支持本地/网络资源 -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: http: qrc: data: blob: 'unsafe-inline' 'unsafe-eval';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' file: https: http: data: blob 'unsafe-inline' 'unsafe-eval'; img-src 'self' file: https: http: data: blob; media-src 'self' file: https: http: data: blob;">
     <title>Dreamina Toolkit</title>
-    <!-- 【关键】加载 Qt 官方的 qwebchannel.js -->
-    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <!-- 普通脚本（同步，按顺序执行） -->
     <script src="tailwindcss.js"></script>
-    <!-- 模块化 JS -->
     <script src="js/store.js"></script>
     <script src="js/api.js"></script>
-    <script type="module" src="js/tabs/tab_service.js"></script>
-    <script type="module" src="js/tabs/tab_presets.js"></script>
-    <script type="module" src="js/tabs/tab_tasks.js"></script>
-    <script type="module" src="js/app.js"></script>
-    <!-- 编辑器标签同步模块 -->
     <script src="js/editor_tag_sync.js"></script>
+
+    <!-- 唯一的模块入口 -->
+    <script type="module" src="js/app.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { height: 100%; overflow: hidden; }
@@ -696,9 +692,8 @@
             <div class="flex flex-col w-full rounded-2xl bg-[#1c1c1e] p-4 gap-3 border border-[#2c2c2e]">
   
                 <div class="flex flex-row items-start gap-3">
-                    <!-- Reference 拖拽区域 - 纯展示，事件由 Python 拦截 -->
-                    <div id="reference-dropzone" class="relative w-16 h-20 shrink-0 cursor-pointer group mt-1" 
-                         onclick="window.pyBridge.open_file_dialog()">
+                    <!-- Reference 拖拽区域 - 纯展示，事件由前端拦截 -->
+                    <div id="reference-dropzone" class="relative w-16 h-20 shrink-0 cursor-pointer group mt-1" onclick="if(window.API) window.API.openAndProcessFiles();">
                         
                         <div id="reference-preview-container" class="relative w-full h-full">
                             <!-- 空状态占位 -->
@@ -973,6 +968,14 @@
 
                 </div>
             </div>
+
+            <!-- ============ Generate 按钮 ============ -->
+            <button id="generateBtn" class="generate-btn" style="margin-top: 12px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+                Generate
+            </button>
         </div>
         
         <!-- ==================== 预设管理 ==================== -->
@@ -1018,25 +1021,5 @@
             <div class="viewer-info" id="viewerInfo"></div>
         </div>
     </div>
-
-    <script>
-        // ============================================================
-        // 【已迁移】dreamina/任务控制台相关逻辑已迁移到 js/tabs/tab_tasks.js
-        // ============================================================
-        // 以下保留的文件相关函数供 Python 回调使用
-        // ============================================================
-
-        // 从 Python 接收文件列表并渲染（由 Python 调用）
-        function renderPreviewsFromPython(filesList) {
-            // 委托给 TabTasks 处理
-            if (window.TabTasks && window.TabTasks._renderPreviews) {
-                AppState.uploadedFiles = filesList || [];
-                window.TabTasks._renderPreviews();
-            }
-        }
-
-        // 供 Python 调用的全局入口（兼容旧代码）
-        window.renderPreviewsFromPython = renderPreviewsFromPython;
-    </script>
 </body>
 </html>
